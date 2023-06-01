@@ -1,4 +1,4 @@
-%% Polar (Arctic or Antarctic) Iceberg Meltrate Estimation Pipeline
+  %% Polar (Arctic or Antarctic) Iceberg Meltrate Estimation Pipeline
 % Ellyn Enderlin (ellynenderlin@boisestate.edu)
 % Last edited: 17 Jan. 2023
 % 
@@ -40,7 +40,7 @@ dir_DEM = ['/Users/Shared/Greenland/melange/',region_abbrev,'/'];
 % path to outputs folder (where you would like all outputs saved)
 dir_output = ['/Users/Shared/Greenland/melange/',region_abbrev,'/'];
 % DEM time stamps (DEM1 = earlier, DEM2 = later) used in file names (YYYYMMDDhhmmss)
-DEM1.time = '20140525'; DEM2.time = '20140614';
+DEM1.time = '20110320'; DEM2.time = '20110402';
 
 %----------Specify Region------------
 %NOTE: Make sure the SMB data are not in a Github repo!!! You may need to
@@ -223,7 +223,6 @@ switch answer
         option_no = 1;
     case '2) Updating'
         option_no = 2;
-        
     case '3) Just checking plots'
         option_no = 3;
 end
