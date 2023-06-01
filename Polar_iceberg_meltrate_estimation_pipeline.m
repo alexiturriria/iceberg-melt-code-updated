@@ -29,9 +29,9 @@ clearvars; close all;
 
 % ----------MODIFY VARIABLES BELOW----------
 % site name and region abbreviation used for file names
-
 region_name = 'KangiataNunaataSermia'; 
 region_abbrev = 'KNS';
+
 % path to codes
 dir_repo = '/Users/alexiturriria/iceberg-melt-code/'; %Github repo containing custom iceberg melt code
 dir_code = '/Users/shared/general-code/'; %directory containing miscellaneous codes

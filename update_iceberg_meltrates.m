@@ -1,4 +1,4 @@
-function [SL] = update_iceberg_meltrates(DEM1,DEM2,IM1,IM2,geography,region_name,region_abbrev,iceberg_refs,dir_output,dir_iceberg,dir_code)
+function [SL] = update_iceberg_meltrates(DEM1,DEM2,IM1,IM2,geography,region_name,region_abbrev,iceberg_refs,dir_output,dir_iceberg,dir_code,dir_SMB)
 % Function to convert iceberg elevation change to melt rates in Antarctica
 % Ellyn Enderlin & Rainey Aberle, Spring 2022
 %
@@ -49,6 +49,11 @@ for i = 1:length(iceberg_refs)
         end
     end
 end
+%make sure DEM date string is long enough to patch now-corrected error in convert_PGC_tifs_to_matfiles.m (corrected 21/04/23)
+if length(DEM1.YYYYMMDDhhmmss) < 14; DEM1.YYYYMMDDhhmmss = [DEM1.YYYYMMDDhhmmss,num2str(zeros(1,14-length(DEM1.YYYYMMDDhhmmss)))]; end 
+if length(DEM2.YYYYMMDDhhmmss) < 14; DEM2.YYYYMMDDhhmmss = [DEM2.YYYYMMDDhhmmss,num2str(zeros(1,14-length(DEM2.YYYYMMDDhhmmss)))]; end 
+berg_dates = [DEM1.YYYYMMDDhhmmss; DEM2.YYYYMMDDhhmmss];
+to = berg_dates(1,:); tf = berg_dates(2,:);
 
 %extract DEM pixel areas
 DEM1_pixel_area = abs(DEM1.x(1)-DEM1.x(2)).*abs(DEM1.y(1)-DEM1.y(2)); DEM2_pixel_area = abs(DEM2.x(1)-DEM2.x(2)).*abs(DEM2.y(1)-DEM2.y(2)); %square meters
@@ -56,8 +61,8 @@ DEM1_pixel_area = abs(DEM1.x(1)-DEM1.x(2)).*abs(DEM1.y(1)-DEM1.y(2)); DEM2_pixel
 %set image bounds & crop
 %EARLIER DATE
 xo = []; yo = [];
-for i = 1:length(SL)
-    xo = [xo SL(berg_ref).initial.x]; yo = [yo SL(berg_ref).initial.y];
+for i = berg_refs
+    xo = [xo SL(i).initial.x]; yo = [yo SL(i).initial.y];
 end
 dy = IM1.y(1)-IM1.y(2);
 if dy < 0
@@ -92,8 +97,8 @@ end
 clear x1 x2 y1 y2 xlims ylims xmin xmax ymin ymax;
 %LATER DATE
 xf = []; yf = [];
-for i = 1:length(SL)
-    xf = [xf SL(berg_ref).final.x]; yf = [yf SL(berg_ref).final.y];
+for i = berg_refs
+    xf = [xf SL(i).final.x]; yf = [yf SL(i).final.y];
 end
 dy = IM2.y(1)-IM2.y(2);
 if dy < 0
@@ -148,7 +153,7 @@ for i = 1:length(iceberg_refs)
     %step 2: Load the re-extracted elevation change data & recalculate volume flux
     load(['iceberg',berg_number,'_dz.mat']);
     SL(berg_ref).name = [region_name,num2str(berg_number)]; 
-    xo = []; yo = []; xf = []; yf = [];
+    xo = []; yo = []; xf = []; yf = []; zo = [] zf = [];
     for j = 1:length(IB)
         xo = cat(1,xo,IB(j).vertices.xo); yo = cat(1,yo,IB(j).vertices.yo);
         xf = cat(1,xf,IB(j).vertices.xf); yf = cat(1,yf,IB(j).vertices.yf);
@@ -260,7 +265,7 @@ for i = 1:length(iceberg_refs)
     density_z = [0:1:1000]; %thickness profile for density curve fitting
     berg_x = nanmean([SL(berg_ref).initial.x SL(berg_ref).final.x]); berg_y = nanmean([SL(berg_ref).initial.y SL(berg_ref).final.y]);
     if geography == 1 %surface air temp, runoff, and firn density for Antarctica
-        [days,iceberg_avgtemp,surfmelt,firnair,density,f,ci] = extract_RACMO_params(dir_SMB,geography,berg_x,berg_y,berg_dates);
+        [dt,iceberg_avgtemp,surfmelt,firnair,density,f,ci] = extract_RACMO_params(dir_SMB,geography,berg_x,berg_y,berg_dates);
         density.nineseventeen = -f.b*log(-(916.9-917)/(917-f.a)); %find depth where rho=916.9 (goes to infinity at 917)
         clear FAC; FAC(1) = firnair.median; FAC(2) = firnair.median-firnair.uncert; FAC(3) = firnair.median+firnair.uncert; %estimate firn air content
         density_profile(1,:) = rho_i-(rho_i-f.a)*exp(-density_z/f.b);
@@ -278,13 +283,13 @@ for i = 1:length(iceberg_refs)
         save([dir_output,'firn_data/',region_name,'_density_data.mat'],'firnair','density');
         close all; drawnow;
     else %only surface air temp and runoff for Greenland
-        [days,iceberg_avgtemp,surfmelt,~,~,~,~] = extract_MAR_params(dir_SMB,geography,berg_x,berg_y,berg_dates);
+        [dt,iceberg_avgtemp,surfmelt] = extract_MAR_params(dir_SMB,geography,berg_x,berg_y,berg_dates);
     end
-    SL(berg_ref).days = days;
+    SL(berg_ref).days = dt;
     SL(berg_ref).SMB = -abs(surfmelt); SL(berg_ref).airtemp = iceberg_avgtemp;
     
-    %convert elevations over the iceberg area to a volume
-    if geography == 1 %iteratively converge on best-estimate for density accounting for water saturation as needed
+    %convert elevations over the iceberg area to a volume: iteratively converge on best-estimate for density accounting for water saturation as needed
+    if geography == 1 
         %flag the iceberg as upright or overturned
         answer = questdlg('Is the iceberg upright (i.e., does it look like the glacier surface)?',...
             'Iceberg Upright or Flipped','1) Yes','2) No','1) Yes');
@@ -343,8 +348,8 @@ for i = 1:length(iceberg_refs)
     lat_area = sort(draft).*sum(dist); SL(berg_ref).initial_range.LA = lat_area;
     area = base_area*ones(size(lat_area)) + lat_area; SL(berg_ref).initial_range.TA = area;
     SL(berg_ref).initial.V = DEM1_pixel_area*(rho_sw/(rho_sw-SL(berg_ref).initial.density))*(sum(DEM_z_masked(~isnan(DEM_z_masked)))+SL(berg_ref).initial.z_median*sum(sum(isnan(DEM_z_masked))));
-    SL(berg_ref).initial_range.V(1) = DEM1_pixel_area*(rho_sw/(rho_sw-min(rho_f)))*(sum(DEM_z_masked(~isnan(DEM_z_masked)))+SL(berg_ref).initial.z_median*sum(sum(isnan(DEM_z_masked))));
-    SL(berg_ref).initial_range.V(2) = DEM1_pixel_area*(rho_sw/(rho_sw-max(rho_f)))*(sum(DEM_z_masked(~isnan(DEM_z_masked)))+SL(berg_ref).initial.z_median*sum(sum(isnan(DEM_z_masked))));
+    SL(berg_ref).initial_range.V(1) = DEM1_pixel_area*(rho_sw/(rho_sw-min(SL(berg_ref).initial_range.density)))*(sum(DEM_z_masked(~isnan(DEM_z_masked)))+SL(berg_ref).initial.z_median*sum(sum(isnan(DEM_z_masked))));
+    SL(berg_ref).initial_range.V(2) = DEM1_pixel_area*(rho_sw/(rho_sw-max(SL(berg_ref).initial_range.density)))*(sum(DEM_z_masked(~isnan(DEM_z_masked)))+SL(berg_ref).initial.z_median*sum(sum(isnan(DEM_z_masked))));
     
     
     %save the iceberg outline
@@ -367,7 +372,7 @@ for i = 1:length(iceberg_refs)
     clear DEM_z_masked z idx idy x y iceberg_IMmask iceberg_DEMmask rho_f draft Hberg lat_area base_area dist area_mask masked_pixels image_xgrid image_ygrid shapes lmin* lmax* perimeter;
     clear x1 x2 y1 y2 xlims ylims xmin xmax ymin ymax DEM_x DEM_y DEM_z;
     disp('Advancing to the later date');
-    close(figure1); close(figure2); drawnow;
+    close all; drawnow;
     
     %plot the later DEM & image
     disp('Plotting the later image-DEM pair for the fjord');
@@ -488,8 +493,8 @@ for i = 1:length(iceberg_refs)
     lat_area = sort(draft).*sum(dist); SL(berg_ref).final_range.LA = lat_area;
     area = base_area*ones(size(lat_area)) + lat_area; SL(berg_ref).final_range.TA = area;
     SL(berg_ref).final.V = DEM2_pixel_area*(rho_sw/(rho_sw-SL(berg_ref).final.density))*(sum(DEM_z_masked(~isnan(DEM_z_masked)))+SL(berg_ref).final.z_median*sum(sum(isnan(DEM_z_masked))));
-    SL(berg_ref).final_range.V(1) = DEM2_pixel_area*(rho_sw/(rho_sw-min(rho_f)))*(sum(DEM_z_masked(~isnan(DEM_z_masked)))+SL(berg_ref).final.z_median*sum(sum(isnan(DEM_z_masked))));
-    SL(berg_ref).final_range.V(2) = DEM2_pixel_area*(rho_sw/(rho_sw-max(rho_f)))*(sum(DEM_z_masked(~isnan(DEM_z_masked)))+SL(berg_ref).final.z_median*sum(sum(isnan(DEM_z_masked))));
+    SL(berg_ref).final_range.V(1) = DEM2_pixel_area*(rho_sw/(rho_sw-min(SL(berg_ref).final_range.density)))*(sum(DEM_z_masked(~isnan(DEM_z_masked)))+SL(berg_ref).final.z_median*sum(sum(isnan(DEM_z_masked))));
+    SL(berg_ref).final_range.V(2) = DEM2_pixel_area*(rho_sw/(rho_sw-max(SL(berg_ref).final_range.density)))*(sum(DEM_z_masked(~isnan(DEM_z_masked)))+SL(berg_ref).final.z_median*sum(sum(isnan(DEM_z_masked))));
     
     %save the iceberg outline
     S.Geometry = 'Polygon';
@@ -580,7 +585,7 @@ for i = 1:length(iceberg_refs)
     SL(berg_ref).ratefactor = rf;
     B = rf^(-1/3); %Pa s^1/3
     creep = ((-1/(2*sqrt(3)))*((nanmean([SL(berg_ref).initial.density SL(berg_ref).final.density])*9.81*SL(berg_ref).mean.z)/(2*sqrt(3)))^3*(1-(nanmean([SL(berg_ref).initial.density SL(berg_ref).final.density])/rho_sw))^3)/(B^3); %creep thinning rate (1/s)
-    SL(berg_ref).creep_dz = (SL(berg_ref).mean.H*creep*(dt*31536000));
+    SL(berg_ref).creep_dz = (SL(berg_ref).mean.H*(creep*86400)*dt);
     dH_submelt = dH_SMBadjust_mean + SL(berg_ref).creep_dz; %integrate creep over the ice thickness & over the time period
     
     %dH uncertainty sources
